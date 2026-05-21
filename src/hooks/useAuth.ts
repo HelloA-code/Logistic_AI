@@ -19,11 +19,14 @@ export function useAuth() {
    */
   const buildProfileFromAuthUser = useCallback((authUser: User): UserProfile => {
     const meta = authUser.user_metadata || {};
+    // Use metadata role, then localStorage fallback, then default
+    const savedRole = localStorage.getItem('ai_path_user_role') as UserRole | null;
+    const role = (meta.role as UserRole) || savedRole || 'operator';
     return {
       id: authUser.id,
       email: authUser.email || '',
       full_name: meta.full_name || 'Logistics Professional',
-      role: (meta.role as UserRole) || 'driver',
+      role,
       company_name: meta.company_name || 'Indian Logistics Network',
       phone: meta.phone || '',
     };
@@ -113,6 +116,7 @@ export function useAuth() {
             phone: '+91-9876543210',
           };
           setUser(demoUser);
+          localStorage.setItem('ai_path_user_role', role);
           navigate(ROUTE_PATHS.DASHBOARD);
           return;
         }
@@ -125,6 +129,7 @@ export function useAuth() {
       }
 
       if (data?.user) {
+        localStorage.setItem('ai_path_user_role', role);
         setUser(buildProfileFromAuthUser(data.user));
         navigate(ROUTE_PATHS.DASHBOARD);
       }
@@ -144,6 +149,7 @@ export function useAuth() {
     try {
       await supabase.auth.signOut();
       setUser(null);
+      localStorage.removeItem('ai_path_user_role');
       navigate(ROUTE_PATHS.HOME);
     } catch (error) {
       console.error('Logout error:', error);
