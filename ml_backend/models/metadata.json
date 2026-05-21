@@ -1,0 +1,93 @@
+{
+  "dataset_rows": 32065,
+  "models": {
+    "delay_probability": {
+      "file": "delay_model.joblib",
+      "scaler": "delay_scaler.joblib",
+      "algorithm": "RandomForestRegressor",
+      "metrics": {
+        "mae": 0.2769,
+        "rmse": 0.3219,
+        "r2": -0.004,
+        "features": [
+          "traffic_congestion_level",
+          "weather_condition_severity",
+          "fuel_consumption_rate",
+          "route_risk_level",
+          "driver_behavior_score",
+          "fatigue_monitoring_score",
+          "loading_unloading_time",
+          "eta_variation_hours",
+          "port_congestion_level",
+          "supplier_reliability_score",
+          "disruption_likelihood_score"
+        ],
+        "top_features": {
+          "driver_behavior_score": 0.0963,
+          "weather_condition_severity": 0.0954,
+          "port_congestion_level": 0.0953,
+          "traffic_congestion_level": 0.0932,
+          "eta_variation_hours": 0.093
+        }
+      }
+    },
+    "risk_classification": {
+      "file": "risk_model.joblib",
+      "scaler": "risk_scaler.joblib",
+      "label_encoder": "risk_label_encoder.joblib",
+      "algorithm": "RandomForestClassifier",
+      "metrics": {
+        "accuracy": 1.0,
+        "f1_weighted": 1.0,
+        "classes": [
+          "High Risk",
+          "Low Risk",
+          "Moderate Risk"
+        ],
+        "features": [
+          "traffic_congestion_level",
+          "weather_condition_severity",
+          "fuel_consumption_rate",
+          "route_risk_level",
+          "driver_behavior_score",
+          "fatigue_monitoring_score",
+          "loading_unloading_time",
+          "eta_variation_hours",
+          "port_congestion_level",
+          "supplier_reliability_score",
+          "disruption_likelihood_score",
+          "delay_probability",
+          "shipping_costs",
+          "customs_clearance_time"
+        ]
+      }
+    },
+    "fuel_optimization": {
+      "file": "fuel_model.joblib",
+      "scaler": "fuel_scaler.joblib",
+      "algorithm": "GradientBoostingRegressor",
+      "metrics": {
+        "mae": 3.4453,
+        "rmse": 4.3423,
+        "r2": -0.0382,
+        "features": [
+          "traffic_congestion_level",
+          "weather_condition_severity",
+          "route_risk_level",
+          "driver_behavior_score",
+          "delivery_time_deviation",
+          "loading_unloading_time",
+          "eta_variation_hours",
+          "fatigue_monitoring_score"
+        ],
+        "top_features": {
+          "loading_unloading_time": 0.1358,
+          "eta_variation_hours": 0.1277,
+          "weather_condition_severity": 0.1263,
+          "delivery_time_deviation": 0.125,
+          "traffic_congestion_level": 0.124
+        }
+      }
+    }
+  }
+}
