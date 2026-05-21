@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -12,13 +12,23 @@ import {
     BarChart3,
     CircleDot,
     Timer,
-    TrendingUp
+    TrendingUp,
+    Plus,
+    Eye
 } from 'lucide-react';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
 import { MetricCard } from '@/components/Cards';
+import { PostLoadForm } from '@/components/Forms';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription
+} from '@/components/ui/dialog';
 import { ROUTE_PATHS } from '@/lib/index';
 
 interface SupplierDashboardProps {
@@ -36,7 +46,9 @@ const statusConfig: Record<string, { color: string; bg: string; label: string }>
 
 const SupplierDashboard: React.FC<SupplierDashboardProps> = ({ userName, companyName }) => {
     const navigate = useNavigate();
-    const { loads, isLoading } = useRealtimeData();
+    const { loads, addLoad, isLoading } = useRealtimeData();
+    const [postLoadOpen, setPostLoadOpen] = useState(false);
+    const [selectedTab, setSelectedTab] = useState<'all' | 'pending' | 'active' | 'delivered'>('all');
 
     const pendingLoads = loads.filter(l => l.status === 'pending');
     const activeShipments = loads.filter(l => l.status === 'in_transit' || l.status === 'assigned');
@@ -55,6 +67,12 @@ const SupplierDashboard: React.FC<SupplierDashboardProps> = ({ userName, company
     ];
     const totalLoads = loads.length || 1;
 
+    // Filtered loads based on selected tab
+    const filteredLoads = selectedTab === 'all' ? loads
+        : selectedTab === 'pending' ? pendingLoads
+        : selectedTab === 'active' ? activeShipments
+        : deliveredLoads;
+
     return (
         <div className="space-y-8 pb-12">
             {/* Welcome Banner */}
@@ -69,13 +87,13 @@ const SupplierDashboard: React.FC<SupplierDashboardProps> = ({ userName, company
                                 Welcome, {userName}
                             </h1>
                             <p className="text-muted-foreground">
-                                {companyName || 'AI Path Logistics'} • Load Management Portal
+                                {companyName || 'AI Path Logistics'} &bull; Supplier Portal
                             </p>
                         </div>
                     </div>
                     <Button
                         size="lg"
-                        onClick={() => navigate(ROUTE_PATHS.LOADS)}
+                        onClick={() => setPostLoadOpen(true)}
                         className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
                     >
                         <PlusCircle className="mr-2 h-5 w-5" />
@@ -105,58 +123,72 @@ const SupplierDashboard: React.FC<SupplierDashboardProps> = ({ userName, company
                     icon={<IndianRupee className="h-5 w-5" />}
                 />
                 <MetricCard
-                    title="Avg Delivery"
-                    value="3.2 days"
-                    change="Faster than avg"
+                    title="Pending Review"
+                    value={pendingLoads.length.toString()}
+                    change="Awaiting operator"
                     icon={<Timer className="h-5 w-5" />}
                 />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left — Active Shipments */}
+                {/* Left — My Loads (main content) */}
                 <div className="lg:col-span-2 space-y-6">
+                    {/* Tab Filters */}
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <Truck className="h-5 w-5 text-primary" />
-                            <h2 className="text-lg font-semibold">Active Shipments</h2>
+                            <Package className="h-5 w-5 text-primary" />
+                            <h2 className="text-lg font-semibold">My Loads</h2>
                         </div>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-muted-foreground"
-                            onClick={() => navigate(ROUTE_PATHS.LOADS)}
-                        >
-                            View All <ArrowRight className="ml-1 h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1 bg-muted/50 rounded-lg p-1">
+                            {[
+                                { key: 'all' as const, label: 'All', count: loads.length },
+                                { key: 'pending' as const, label: 'Pending', count: pendingLoads.length },
+                                { key: 'active' as const, label: 'Active', count: activeShipments.length },
+                                { key: 'delivered' as const, label: 'Delivered', count: deliveredLoads.length },
+                            ].map(tab => (
+                                <button
+                                    key={tab.key}
+                                    onClick={() => setSelectedTab(tab.key)}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                                        selectedTab === tab.key
+                                            ? 'bg-background shadow text-foreground'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                    }`}
+                                >
+                                    {tab.label} ({tab.count})
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
+                    {/* Load Cards */}
                     {isLoading ? (
                         <div className="space-y-4">
                             {[1, 2, 3].map(i => (
                                 <div key={i} className="h-28 rounded-xl bg-muted animate-pulse" />
                             ))}
                         </div>
-                    ) : activeShipments.length === 0 ? (
-                        <div className="text-center py-12 border border-dashed border-border rounded-2xl">
+                    ) : filteredLoads.length === 0 ? (
+                        <div className="text-center py-16 border border-dashed border-border rounded-2xl">
                             <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <Truck className="h-8 w-8 text-muted-foreground/50" />
+                                <Package className="h-8 w-8 text-muted-foreground/50" />
                             </div>
-                            <p className="text-muted-foreground font-medium">No active shipments</p>
+                            <p className="text-muted-foreground font-medium">No loads found</p>
                             <p className="text-sm text-muted-foreground/70 mt-1">Post a new load to get started.</p>
-                            <Button variant="outline" className="mt-4" onClick={() => navigate(ROUTE_PATHS.LOADS)}>
-                                <PlusCircle className="mr-2 h-4 w-4" /> Post Load
+                            <Button variant="outline" className="mt-4" onClick={() => setPostLoadOpen(true)}>
+                                <PlusCircle className="mr-2 h-4 w-4" /> Post New Load
                             </Button>
                         </div>
                     ) : (
-                        <div className="space-y-4">
-                            {activeShipments.map((load, i) => {
+                        <div className="space-y-3">
+                            {filteredLoads.map((load, i) => {
                                 const sc = statusConfig[load.status] || statusConfig.pending;
                                 return (
                                     <motion.div
                                         key={load.id}
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: i * 0.05 }}
+                                        transition={{ delay: i * 0.04 }}
                                         className="rounded-xl border border-border bg-card p-5 hover:border-primary/30 transition-colors"
                                     >
                                         <div className="flex items-start justify-between gap-4">
@@ -177,12 +209,27 @@ const SupplierDashboard: React.FC<SupplierDashboardProps> = ({ userName, company
                                                         <Package className="h-3 w-3" /> {(load.weight_kg / 1000).toFixed(1)}T
                                                     </span>
                                                     <span className="flex items-center gap-1">
-                                                        <Clock className="h-3 w-3" /> by {load.delivery_deadline}
+                                                        <Clock className="h-3 w-3" /> Pickup: {load.pickup_date}
                                                     </span>
-                                                    <span className="flex items-center gap-1 text-primary font-medium">
-                                                        <IndianRupee className="h-3 w-3" /> {formatCurrency(load.price_inr)}
+                                                    <span className="flex items-center gap-1">
+                                                        <Timer className="h-3 w-3" /> Deadline: {load.delivery_deadline}
                                                     </span>
                                                 </div>
+                                            </div>
+                                            <div className="text-right space-y-2">
+                                                <p className="text-lg font-bold text-primary">{formatCurrency(load.price_inr)}</p>
+                                                {load.status === 'pending' && (
+                                                    <p className="text-[10px] text-amber-500 font-medium">Awaiting operator review</p>
+                                                )}
+                                                {load.status === 'assigned' && (
+                                                    <p className="text-[10px] text-blue-500 font-medium">Vehicle assigned</p>
+                                                )}
+                                                {load.status === 'in_transit' && (
+                                                    <p className="text-[10px] text-violet-500 font-medium">In transit</p>
+                                                )}
+                                                {load.status === 'delivered' && (
+                                                    <p className="text-[10px] text-emerald-500 font-medium">Delivered successfully</p>
+                                                )}
                                             </div>
                                         </div>
                                     </motion.div>
@@ -190,37 +237,22 @@ const SupplierDashboard: React.FC<SupplierDashboardProps> = ({ userName, company
                             })}
                         </div>
                     )}
-
-                    {/* Recent Deliveries Table */}
-                    <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
-                        <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                            <h3 className="font-semibold">Completed Deliveries</h3>
-                            <Badge variant="secondary" className="ml-auto">{deliveredLoads.length}</Badge>
-                        </div>
-                        {deliveredLoads.length === 0 ? (
-                            <p className="text-sm text-muted-foreground text-center py-4">No completed deliveries yet.</p>
-                        ) : (
-                            <div className="space-y-2">
-                                {deliveredLoads.slice(0, 5).map(load => (
-                                    <div key={load.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/50">
-                                        <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
-                                            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium truncate">{load.origin} → {load.destination}</p>
-                                            <p className="text-xs text-muted-foreground">{(load.weight_kg / 1000).toFixed(1)}T • {load.delivery_deadline}</p>
-                                        </div>
-                                        <span className="text-sm font-semibold text-primary whitespace-nowrap">{formatCurrency(load.price_inr)}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
                 </div>
 
-                {/* Right — Status Breakdown + Quick Actions */}
+                {/* Right — Status + Revenue + Quick Actions */}
                 <div className="space-y-6">
+                    {/* Quick Post Load Card */}
+                    <div className="rounded-2xl border-2 border-dashed border-primary/30 bg-primary/5 p-6 text-center space-y-3">
+                        <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
+                            <Plus className="h-6 w-6 text-primary" />
+                        </div>
+                        <h3 className="font-semibold">Post a New Load</h3>
+                        <p className="text-xs text-muted-foreground">Enter your shipment details. The operator will review and assign a vehicle.</p>
+                        <Button className="w-full" onClick={() => setPostLoadOpen(true)}>
+                            <PlusCircle className="mr-2 h-4 w-4" /> Post Load Now
+                        </Button>
+                    </div>
+
                     {/* Load Status Overview */}
                     <div className="rounded-2xl border border-border bg-card p-6 space-y-5">
                         <div className="flex items-center gap-2">
@@ -273,11 +305,12 @@ const SupplierDashboard: React.FC<SupplierDashboardProps> = ({ userName, company
                         <h3 className="font-semibold">Quick Actions</h3>
                         <div className="space-y-3">
                             <Button
+                                variant="outline"
                                 className="w-full justify-start gap-3 h-12"
                                 onClick={() => navigate(ROUTE_PATHS.LOADS)}
                             >
-                                <PlusCircle className="h-5 w-5" />
-                                Post New Load
+                                <Eye className="h-5 w-5" />
+                                View All Loads
                             </Button>
                             <Button
                                 variant="outline"
@@ -291,6 +324,31 @@ const SupplierDashboard: React.FC<SupplierDashboardProps> = ({ userName, company
                     </div>
                 </div>
             </div>
+
+            {/* Post Load Dialog */}
+            <Dialog open={postLoadOpen} onOpenChange={setPostLoadOpen}>
+                <DialogContent className="sm:max-w-[550px]">
+                    <DialogHeader>
+                        <DialogTitle>Post New Load</DialogTitle>
+                        <DialogDescription>
+                            Enter your shipment details below. Once posted, the fleet operator will review and assign a vehicle. You can track the status here.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <PostLoadForm
+                        onSubmit={(data) => {
+                            addLoad({
+                                origin: data.origin,
+                                destination: data.destination,
+                                weight_kg: data.weight_kg,
+                                price_inr: data.price_inr,
+                                pickup_date: data.pickup_date,
+                                delivery_deadline: data.delivery_deadline,
+                            });
+                            setPostLoadOpen(false);
+                        }}
+                    />
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
