@@ -382,6 +382,39 @@ export function useRealtimeData() {
     setLoads(prev => [newLoad, ...prev]);
   }, []);
 
+  const evaluateLoad = useCallback(async (loadData: Load, vehicleData: Vehicle) => {
+    try {
+      const response = await fetch('/api/predict/load-decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vehicle: {
+            id: vehicleData.id,
+            plate_number: vehicleData.plate_number,
+            model: vehicleData.model,
+            status: vehicleData.status,
+            fuel_level: vehicleData.fuel_level,
+            capacity_kg: vehicleData.capacity_kg,
+            current_load_kg: vehicleData.current_load_kg,
+            city: vehicleData.current_location.city,
+          },
+          load: {
+            origin: loadData.origin,
+            destination: loadData.destination,
+            weight_kg: loadData.weight_kg,
+            price_inr: loadData.price_inr,
+          },
+        }),
+      });
+
+      if (!response.ok) throw new Error(`ML API returned ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      console.error('Load evaluation failed:', err);
+      throw err;
+    }
+  }, []);
+
   return {
     vehicles,
     loads,
@@ -393,6 +426,7 @@ export function useRealtimeData() {
     updateDecisionStatus,
     assignLoad,
     addLoad,
+    evaluateLoad,
     refresh: fetchData,
     fetchData
   };

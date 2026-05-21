@@ -447,6 +447,241 @@ def generate_decision(delay_prob, risk_label, risk_confidence, fuel_gap_pct,
 
 
 # ───────────────────────────────────────────────────────────
+# Load Accept/Reject Decision
+# ───────────────────────────────────────────────────────────
+
+# Approximate distances between major Indian cities (km)
+CITY_DISTANCES = {
+    ('Mumbai', 'Delhi'): 1400, ('Delhi', 'Mumbai'): 1400,
+    ('Mumbai', 'Bangalore'): 980, ('Bangalore', 'Mumbai'): 980,
+    ('Mumbai', 'Chennai'): 1340, ('Chennai', 'Mumbai'): 1340,
+    ('Mumbai', 'Kolkata'): 2050, ('Kolkata', 'Mumbai'): 2050,
+    ('Mumbai', 'Hyderabad'): 710, ('Hyderabad', 'Mumbai'): 710,
+    ('Mumbai', 'Ahmedabad'): 524, ('Ahmedabad', 'Mumbai'): 524,
+    ('Mumbai', 'Pune'): 150, ('Pune', 'Mumbai'): 150,
+    ('Delhi', 'Kolkata'): 1530, ('Kolkata', 'Delhi'): 1530,
+    ('Delhi', 'Bangalore'): 2150, ('Bangalore', 'Delhi'): 2150,
+    ('Delhi', 'Chennai'): 2180, ('Chennai', 'Delhi'): 2180,
+    ('Delhi', 'Hyderabad'): 1570, ('Hyderabad', 'Delhi'): 1570,
+    ('Delhi', 'Jaipur'): 280, ('Jaipur', 'Delhi'): 280,
+    ('Delhi', 'Lucknow'): 555, ('Lucknow', 'Delhi'): 555,
+    ('Bangalore', 'Chennai'): 350, ('Chennai', 'Bangalore'): 350,
+    ('Bangalore', 'Hyderabad'): 570, ('Hyderabad', 'Bangalore'): 570,
+    ('Kolkata', 'Chennai'): 1660, ('Chennai', 'Kolkata'): 1660,
+    ('Ahmedabad', 'Pune'): 660, ('Pune', 'Ahmedabad'): 660,
+    ('Ahmedabad', 'Delhi'): 950, ('Delhi', 'Ahmedabad'): 950,
+    ('Jaipur', 'Ahmedabad'): 670, ('Ahmedabad', 'Jaipur'): 670,
+    ('Lucknow', 'Kolkata'): 990, ('Kolkata', 'Lucknow'): 990,
+    ('Lucknow', 'Nagpur'): 860, ('Nagpur', 'Lucknow'): 860,
+    ('Nagpur', 'Mumbai'): 840, ('Mumbai', 'Nagpur'): 840,
+    ('Nagpur', 'Hyderabad'): 500, ('Hyderabad', 'Nagpur'): 500,
+    ('Indore', 'Mumbai'): 585, ('Mumbai', 'Indore'): 585,
+    ('Indore', 'Delhi'): 810, ('Delhi', 'Indore'): 810,
+    ('Indore', 'Surat'): 390, ('Surat', 'Indore'): 390,
+    ('Pune', 'Bangalore'): 840, ('Bangalore', 'Pune'): 840,
+    ('Surat', 'Mumbai'): 285, ('Mumbai', 'Surat'): 285,
+    ('Kanpur', 'Delhi'): 440, ('Delhi', 'Kanpur'): 440,
+    ('Kanpur', 'Lucknow'): 80, ('Lucknow', 'Kanpur'): 80,
+}
+
+def get_distance(origin, destination):
+    """Get approximate distance between two Indian cities."""
+    key = (origin, destination)
+    if key in CITY_DISTANCES:
+        return CITY_DISTANCES[key]
+    # Default estimate based on average intercity distance
+    return 800
+
+
+@app.route('/api/predict/load-decision', methods=['POST'])
+def predict_load_decision():
+    """
+    Evaluate whether a vehicle should ACCEPT or REJECT a load.
+    Considers: ML risk/delay predictions, route profitability, fuel cost,
+    vehicle capacity, and detour distance.
+    """
+    if not models.get('loaded'):
+        return jsonify({'error': 'Models not loaded'}), 503
+
+    data = request.json
+    vehicle = data.get('vehicle', {})
+    load = data.get('load', {})
+
+    if not vehicle or not load:
+        return jsonify({'error': 'Both vehicle and load data required'}), 400
+
+    # ── Extract load details ──
+    origin = load.get('origin', 'Unknown')
+    destination = load.get('destination', 'Unknown')
+    weight_kg = load.get('weight_kg', 10000)
+    price_inr = load.get('price_inr', 50000)
+    vehicle_city = vehicle.get('city', 'Unknown')
+    vehicle_capacity = vehicle.get('capacity_kg', 28000)
+    current_load = vehicle.get('current_load_kg', 0)
+    fuel_level = vehicle.get('fuel_level', 50)
+    vehicle_status = vehicle.get('status', 'idle')
+    plate = vehicle.get('plate_number', 'Unknown')
+
+    # ── Run ML Models ──
+    features = vehicle_to_features(vehicle)
+    
+    # Model 1: Delay
+    X_delay = make_feature_vector(features, DELAY_FEATURES)
+    X_delay_scaled = models['delay_scaler'].transform(X_delay)
+    delay_prob = float(models['delay_model'].predict(X_delay_scaled)[0])
+    delay_prob = max(0.0, min(1.0, delay_prob))
+    features['delay_probability'] = delay_prob
+    
+    # Model 2: Risk
+    X_risk = make_feature_vector(features, RISK_FEATURES)
+    X_risk_scaled = models['risk_scaler'].transform(X_risk)
+    risk_idx = models['risk_model'].predict(X_risk_scaled)[0]
+    risk_label = models['risk_le'].inverse_transform([risk_idx])[0]
+    risk_probas = models['risk_model'].predict_proba(X_risk_scaled)[0]
+    risk_confidence = round(float(max(risk_probas)) * 100, 1)
+    
+    # Model 3: Fuel
+    X_fuel = make_feature_vector(features, FUEL_FEATURES)
+    X_fuel_scaled = models['fuel_scaler'].transform(X_fuel)
+    optimal_fuel = float(models['fuel_model'].predict(X_fuel_scaled)[0])
+    optimal_fuel = max(2.0, optimal_fuel)
+
+    # ── Calculate Route Economics ──
+    pickup_distance = get_distance(vehicle_city, origin)
+    delivery_distance = get_distance(origin, destination)
+    total_distance = pickup_distance + delivery_distance
+
+    fuel_cost_per_km = (optimal_fuel / 100) * 95  # Rs 95/litre
+    total_fuel_cost = fuel_cost_per_km * total_distance
+    toll_estimate = total_distance * 2.5  # ~Rs 2.5/km average toll
+    driver_cost = (total_distance / 300) * 1500  # Rs 1500/day, 300km/day
+    total_cost = total_fuel_cost + toll_estimate + driver_cost
+
+    profit = price_inr - total_cost
+    profit_margin = (profit / price_inr * 100) if price_inr > 0 else 0
+    price_per_km = price_inr / total_distance if total_distance > 0 else 0
+
+    # ── Capacity Check ──
+    available_capacity = vehicle_capacity - current_load
+    can_carry = available_capacity >= weight_kg
+
+    # ── Decision Logic ──
+    reasons_accept = []
+    reasons_reject = []
+    score = 50  # Start neutral
+
+    # Profitability
+    if profit_margin > 25:
+        score += 20
+        reasons_accept.append(f"High profit margin: {profit_margin:.1f}% (Rs {profit:,.0f} net profit)")
+    elif profit_margin > 10:
+        score += 10
+        reasons_accept.append(f"Decent profit margin: {profit_margin:.1f}% (Rs {profit:,.0f} net profit)")
+    elif profit_margin > 0:
+        score += 2
+        reasons_accept.append(f"Low but positive margin: {profit_margin:.1f}%")
+    else:
+        score -= 25
+        reasons_reject.append(f"LOSS-making route: margin {profit_margin:.1f}% (loss of Rs {abs(profit):,.0f})")
+
+    # Price per km
+    if price_per_km > 80:
+        score += 10
+        reasons_accept.append(f"Excellent rate: Rs {price_per_km:.0f}/km")
+    elif price_per_km < 30:
+        score -= 10
+        reasons_reject.append(f"Below market rate: Rs {price_per_km:.0f}/km (market avg: Rs 50-80/km)")
+
+    # Capacity
+    if not can_carry:
+        score -= 40
+        reasons_reject.append(f"Overweight: load {weight_kg:,} kg exceeds available capacity {available_capacity:,} kg")
+    else:
+        utilization = (weight_kg / vehicle_capacity) * 100
+        if utilization > 70:
+            score += 5
+            reasons_accept.append(f"Good capacity utilization: {utilization:.0f}%")
+
+    # Delay risk from ML
+    if delay_prob > 0.7:
+        score -= 15
+        reasons_reject.append(f"ML predicts {delay_prob*100:.0f}% delay probability on this route")
+    elif delay_prob < 0.3:
+        score += 10
+        reasons_accept.append(f"Low delay risk: only {delay_prob*100:.0f}% probability")
+
+    # Risk from ML
+    if risk_label == 'High Risk':
+        score -= 15
+        reasons_reject.append(f"ML classifies route as High Risk ({risk_confidence}% confidence)")
+    elif risk_label == 'Low Risk':
+        score += 10
+        reasons_accept.append(f"ML classifies route as Low Risk ({risk_confidence}% confidence)")
+
+    # Fuel level
+    if fuel_level < 20:
+        score -= 10
+        reasons_reject.append(f"Low fuel ({fuel_level}%) - needs refueling before pickup, adds delay")
+
+    # Pickup detour
+    if pickup_distance > 300:
+        score -= 10
+        reasons_reject.append(f"Long pickup detour: {pickup_distance} km from current location ({vehicle_city})")
+    elif pickup_distance < 100:
+        score += 10
+        reasons_accept.append(f"Pickup is nearby: only {pickup_distance} km from {vehicle_city}")
+
+    # Vehicle status
+    if vehicle_status == 'maintenance':
+        score -= 30
+        reasons_reject.append("Vehicle is under maintenance")
+    elif vehicle_status == 'delayed':
+        score -= 15
+        reasons_reject.append("Vehicle already delayed on current assignment")
+
+    # Clamp score
+    score = max(0, min(100, score))
+    
+    # Final decision
+    if score >= 55 and can_carry:
+        decision = 'ACCEPT'
+        summary = f"ACCEPT this load. Profitable route ({origin} to {destination}, {total_distance} km) with Rs {profit:,.0f} estimated profit at {profit_margin:.1f}% margin."
+    else:
+        decision = 'REJECT'
+        top_reason = reasons_reject[0] if reasons_reject else "Overall score too low"
+        summary = f"SKIP this load. {top_reason}."
+
+    return jsonify({
+        'success': True,
+        'decision': decision,
+        'confidence_score': score,
+        'summary': summary,
+        'reasons_accept': reasons_accept,
+        'reasons_reject': reasons_reject,
+        'economics': {
+            'price_inr': price_inr,
+            'total_cost_inr': round(total_cost),
+            'estimated_profit_inr': round(profit),
+            'profit_margin_percent': round(profit_margin, 1),
+            'price_per_km': round(price_per_km, 1),
+            'pickup_distance_km': pickup_distance,
+            'delivery_distance_km': delivery_distance,
+            'total_distance_km': total_distance,
+            'fuel_cost_inr': round(total_fuel_cost),
+            'toll_estimate_inr': round(toll_estimate),
+        },
+        'ml_analysis': {
+            'delay_probability': round(delay_prob, 4),
+            'risk_classification': risk_label,
+            'risk_confidence': risk_confidence,
+            'optimal_fuel_rate': round(optimal_fuel, 2),
+        },
+        'vehicle': plate,
+        'route': f"{origin} -> {destination}",
+    })
+
+
+# ───────────────────────────────────────────────────────────
 # Run
 # ───────────────────────────────────────────────────────────
 

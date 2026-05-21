@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Package, Truck, Clock, CheckCircle, Search, Filter, Plus, ArrowRight } from 'lucide-react';
+import { Package, Truck, Clock, CheckCircle, Search, Filter, Plus, ArrowRight, Sparkles, Brain, TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
 import { IMAGES } from '@/assets/images';
 import { Layout } from '@/components/Layout';
 import { MetricCard, LoadCard } from '@/components/Cards';
@@ -37,10 +37,32 @@ const getStatusColor = (status: LoadStatus) => {
 };
 
 export default function Loads() {
-  const { loads, assignLoad, addLoad, isLoading } = useRealtimeData();
+  const { loads, vehicles, assignLoad, addLoad, evaluateLoad, isLoading } = useRealtimeData();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null);
   const [postLoadOpen, setPostLoadOpen] = useState(false);
+  const [evalResult, setEvalResult] = useState<any>(null);
+  const [evalLoading, setEvalLoading] = useState(false);
+  const [evalLoadId, setEvalLoadId] = useState<string | null>(null);
+
+  const handleEvaluateLoad = async (load: Load) => {
+    setEvalLoading(true);
+    setEvalLoadId(load.id);
+    try {
+      // Pick the best available vehicle (idle or loading, with capacity)
+      const availableVehicle = vehicles.find(v => 
+        (v.status === 'idle' || v.status === 'loading') && 
+        (v.capacity_kg - v.current_load_kg) >= load.weight_kg
+      ) || vehicles[0];
+      
+      const result = await evaluateLoad(load, availableVehicle);
+      setEvalResult(result);
+    } catch (err) {
+      setEvalResult(null);
+    } finally {
+      setEvalLoading(false);
+    }
+  };
 
   const pendingLoads = loads.filter(l => l.status === 'pending');
   const activeLoads = loads.filter(l => l.status === 'assigned' || l.status === 'in_transit');
@@ -124,12 +146,35 @@ export default function Loads() {
               pendingLoads.map((load) => (
                 <div key={load.id} className="group relative">
                   <LoadCard load={load} />
-                  <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl backdrop-blur-sm">
+                  {/* Show AI result badge if evaluated */}
+                  {evalResult && evalLoadId === load.id && !evalLoading && (
+                    <div className={`absolute top-2 right-2 z-10 px-2 py-1 rounded-md text-xs font-bold ${
+                      evalResult.decision === 'ACCEPT' 
+                        ? 'bg-emerald-500/90 text-white' 
+                        : 'bg-red-500/90 text-white'
+                    }`}>
+                      {evalResult.decision === 'ACCEPT' ? '✓ ACCEPT' : '✗ SKIP'}
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded-xl backdrop-blur-sm">
                     <Button 
                       onClick={() => setSelectedLoadId(load.id)}
                       className="shadow-lg"
                     >
                       Assign Vehicle
+                    </Button>
+                    <Button 
+                      variant="secondary"
+                      className="shadow-lg gap-1"
+                      disabled={evalLoading && evalLoadId === load.id}
+                      onClick={() => handleEvaluateLoad(load)}
+                    >
+                      {evalLoading && evalLoadId === load.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Brain className="h-4 w-4" />
+                      )}
+                      AI Evaluate
                     </Button>
                   </div>
                 </div>
@@ -253,6 +298,125 @@ export default function Loads() {
               setPostLoadOpen(false);
             }} 
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Load Evaluation Result Dialog */}
+      <Dialog open={!!evalResult && !evalLoading} onOpenChange={(open) => !open && setEvalResult(null)}>
+        <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5 text-primary" />
+              AI Load Evaluation
+            </DialogTitle>
+            <DialogDescription>
+              ML model recommendation for: {evalResult?.route}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {evalResult && (
+            <div className="space-y-4">
+              {/* Decision Banner */}
+              <div className={`p-4 rounded-lg border-2 ${
+                evalResult.decision === 'ACCEPT' 
+                  ? 'bg-emerald-500/10 border-emerald-500/30' 
+                  : 'bg-red-500/10 border-red-500/30'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-2xl font-bold ${
+                    evalResult.decision === 'ACCEPT' ? 'text-emerald-500' : 'text-red-500'
+                  }`}>
+                    {evalResult.decision === 'ACCEPT' ? '✓ ACCEPT LOAD' : '✗ SKIP LOAD'}
+                  </span>
+                  <Badge variant="outline" className="text-sm">
+                    Score: {evalResult.confidence_score}/100
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">{evalResult.summary}</p>
+              </div>
+
+              {/* Route Economics */}
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold flex items-center gap-1">
+                  <TrendingUp className="h-4 w-4 text-primary" /> Route Economics
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 rounded bg-muted/50">
+                    <span className="text-[10px] text-muted-foreground uppercase">Load Price</span>
+                    <p className="font-mono font-bold">₹{evalResult.economics?.price_inr?.toLocaleString()}</p>
+                  </div>
+                  <div className="p-2 rounded bg-muted/50">
+                    <span className="text-[10px] text-muted-foreground uppercase">Total Cost</span>
+                    <p className="font-mono font-bold">₹{evalResult.economics?.total_cost_inr?.toLocaleString()}</p>
+                  </div>
+                  <div className={`p-2 rounded ${evalResult.economics?.estimated_profit_inr > 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+                    <span className="text-[10px] text-muted-foreground uppercase">Est. Profit</span>
+                    <p className={`font-mono font-bold ${evalResult.economics?.estimated_profit_inr > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                      ₹{evalResult.economics?.estimated_profit_inr?.toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="p-2 rounded bg-muted/50">
+                    <span className="text-[10px] text-muted-foreground uppercase">Profit Margin</span>
+                    <p className="font-mono font-bold">{evalResult.economics?.profit_margin_percent}%</p>
+                  </div>
+                  <div className="p-2 rounded bg-muted/50">
+                    <span className="text-[10px] text-muted-foreground uppercase">Rate</span>
+                    <p className="font-mono font-bold">₹{evalResult.economics?.price_per_km}/km</p>
+                  </div>
+                  <div className="p-2 rounded bg-muted/50">
+                    <span className="text-[10px] text-muted-foreground uppercase">Total Distance</span>
+                    <p className="font-mono font-bold">{evalResult.economics?.total_distance_km} km</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ML Analysis */}
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold flex items-center gap-1">
+                  <Sparkles className="h-4 w-4 text-primary" /> ML Model Analysis
+                </h4>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-2 rounded bg-muted/50 text-center">
+                    <span className="text-[10px] text-muted-foreground uppercase block">Delay Risk</span>
+                    <p className="font-bold text-lg">{Math.round(evalResult.ml_analysis?.delay_probability * 100)}%</p>
+                  </div>
+                  <div className="p-2 rounded bg-muted/50 text-center">
+                    <span className="text-[10px] text-muted-foreground uppercase block">Risk Level</span>
+                    <p className={`font-bold text-sm ${
+                      evalResult.ml_analysis?.risk_classification === 'High Risk' ? 'text-red-500' :
+                      evalResult.ml_analysis?.risk_classification === 'Moderate Risk' ? 'text-amber-500' : 'text-emerald-500'
+                    }`}>{evalResult.ml_analysis?.risk_classification}</p>
+                  </div>
+                  <div className="p-2 rounded bg-muted/50 text-center">
+                    <span className="text-[10px] text-muted-foreground uppercase block">Fuel Rate</span>
+                    <p className="font-bold text-sm">{evalResult.ml_analysis?.optimal_fuel_rate} L/100km</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Reasons */}
+              {evalResult.reasons_accept?.length > 0 && (
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-emerald-500">Reasons to Accept</h4>
+                  {evalResult.reasons_accept.map((r: string, i: number) => (
+                    <p key={i} className="text-xs text-muted-foreground flex items-start gap-1">
+                      <TrendingUp className="h-3 w-3 mt-0.5 text-emerald-500 shrink-0" /> {r}
+                    </p>
+                  ))}
+                </div>
+              )}
+              {evalResult.reasons_reject?.length > 0 && (
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-red-500">Reasons to Skip</h4>
+                  {evalResult.reasons_reject.map((r: string, i: number) => (
+                    <p key={i} className="text-xs text-muted-foreground flex items-start gap-1">
+                      <TrendingDown className="h-3 w-3 mt-0.5 text-red-500 shrink-0" /> {r}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </Layout>
