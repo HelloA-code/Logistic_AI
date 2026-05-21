@@ -360,6 +360,28 @@ export function useRealtimeData() {
     }
   }, []);
 
+  const addLoad = useCallback((data: {
+    origin: string;
+    destination: string;
+    weight_kg: number;
+    price_inr: number;
+    pickup_date: string;
+    delivery_deadline: string;
+  }) => {
+    const newLoad: Load = {
+      id: `load-${Date.now()}`,
+      origin: data.origin,
+      destination: data.destination,
+      weight_kg: data.weight_kg,
+      price_inr: data.price_inr,
+      status: 'pending' as LoadStatus,
+      pickup_date: data.pickup_date,
+      delivery_deadline: data.delivery_deadline,
+      supplier_id: 'current-user',
+    };
+    setLoads(prev => [newLoad, ...prev]);
+  }, []);
+
   return {
     vehicles,
     loads,
@@ -370,6 +392,7 @@ export function useRealtimeData() {
     generateAIInsights,
     updateDecisionStatus,
     assignLoad,
+    addLoad,
     refresh: fetchData,
     fetchData
   };

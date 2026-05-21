@@ -364,3 +364,184 @@ export function LoadAssignmentForm({ loadId, onAssign }: { loadId: string; onAss
     </Form>
   );
 }
+
+/**
+ * Post New Load Form Component
+ * Allows suppliers/operators to create a new incoming load with
+ * origin, destination, weight, price, and delivery deadline.
+ */
+const postLoadSchema = z.object({
+  origin: z.string().min(1, 'Please select origin city'),
+  destination: z.string().min(1, 'Please select destination city'),
+  weight_kg: z.coerce.number().min(100, 'Minimum 100 kg').max(50000, 'Maximum 50,000 kg'),
+  price_inr: z.coerce.number().min(1000, 'Minimum ₹1,000').max(1000000, 'Maximum ₹10,00,000'),
+  pickup_date: z.string().min(1, 'Please select pickup date'),
+  delivery_deadline: z.string().min(1, 'Please select delivery deadline'),
+});
+
+type PostLoadFormValues = z.infer<typeof postLoadSchema>;
+
+export function PostLoadForm({ onSubmit }: { onSubmit: (data: PostLoadFormValues) => void }) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const form = useForm<PostLoadFormValues>({
+    resolver: zodResolver(postLoadSchema),
+    defaultValues: {
+      origin: '',
+      destination: '',
+      weight_kg: 0,
+      price_inr: 0,
+      pickup_date: new Date().toISOString().split('T')[0],
+      delivery_deadline: '',
+    },
+  });
+
+  const handleFormSubmit = async (values: PostLoadFormValues) => {
+    if (values.origin === values.destination) {
+      toast.error('Origin and destination cannot be the same city.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 600));
+      onSubmit(values);
+      toast.success(`New load posted: ${values.origin} → ${values.destination} (${values.weight_kg} kg, ₹${values.price_inr.toLocaleString()})`);
+      form.reset();
+    } catch (error) {
+      toast.error('Failed to post load.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="origin"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Origin City</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select pickup city" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {INDIAN_CITIES.map((city) => (
+                      <SelectItem key={city} value={city}>{city}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="destination"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Destination City</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select delivery city" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {INDIAN_CITIES.map((city) => (
+                      <SelectItem key={city} value={city}>{city}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="weight_kg"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Weight (kg)</FormLabel>
+                <FormControl>
+                  <Input type="number" placeholder="e.g. 15000" {...field} />
+                </FormControl>
+                <FormDescription>Load weight in kilograms</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="price_inr"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Price (₹ INR)</FormLabel>
+                <FormControl>
+                  <Input type="number" placeholder="e.g. 85000" {...field} />
+                </FormControl>
+                <FormDescription>Transport cost in Rupees</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="pickup_date"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Pickup Date</FormLabel>
+                <FormControl>
+                  <Input type="date" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="delivery_deadline"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Delivery Deadline</FormLabel>
+                <FormControl>
+                  <Input type="date" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="pt-2">
+          <Button type="submit" className="w-full group" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Package className="mr-2 h-4 w-4" />
+                Post Load to Market
+                <ChevronRight className="ml-2 w-4 h-4 transition-transform group-hover:translate-x-1" />
+              </>
+            )}
+          </Button>
+        </div>
+      </form>
+    </Form>
+  );
+}
+

@@ -4,7 +4,7 @@ import { Package, Truck, Clock, CheckCircle, Search, Filter, Plus, ArrowRight } 
 import { IMAGES } from '@/assets/images';
 import { Layout } from '@/components/Layout';
 import { MetricCard, LoadCard } from '@/components/Cards';
-import { LoadAssignmentForm } from '@/components/Forms';
+import { LoadAssignmentForm, PostLoadForm } from '@/components/Forms';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
 import { Load, LoadStatus } from '@/lib/index';
 import { Button } from '@/components/ui/button';
@@ -37,9 +37,10 @@ const getStatusColor = (status: LoadStatus) => {
 };
 
 export default function Loads() {
-  const { loads, assignLoad, isLoading } = useRealtimeData();
+  const { loads, assignLoad, addLoad, isLoading } = useRealtimeData();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null);
+  const [postLoadOpen, setPostLoadOpen] = useState(false);
 
   const pendingLoads = loads.filter(l => l.status === 'pending');
   const activeLoads = loads.filter(l => l.status === 'assigned' || l.status === 'in_transit');
@@ -160,7 +161,7 @@ export default function Loads() {
               <Button variant="outline" size="icon">
                 <Filter className="h-4 w-4" />
               </Button>
-              <Button size="sm" className="gap-2">
+              <Button size="sm" className="gap-2" onClick={() => setPostLoadOpen(true)}>
                 <Plus className="h-4 w-4" /> Post Load
               </Button>
             </div>
@@ -228,6 +229,30 @@ export default function Loads() {
               }} 
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={postLoadOpen} onOpenChange={setPostLoadOpen}>
+        <DialogContent className="sm:max-w-[550px]">
+          <DialogHeader>
+            <DialogTitle>Post New Load</DialogTitle>
+            <DialogDescription>
+              Create a new shipment order. It will appear as "Pending" and can be assigned to a vehicle.
+            </DialogDescription>
+          </DialogHeader>
+          <PostLoadForm 
+            onSubmit={(data) => {
+              addLoad({
+                origin: data.origin,
+                destination: data.destination,
+                weight_kg: data.weight_kg,
+                price_inr: data.price_inr,
+                pickup_date: data.pickup_date,
+                delivery_deadline: data.delivery_deadline,
+              });
+              setPostLoadOpen(false);
+            }} 
+          />
         </DialogContent>
       </Dialog>
     </Layout>
