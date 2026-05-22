@@ -122,15 +122,20 @@ export function useAuth() {
         }
 
         if (signUpData.user) {
-          setUser(buildProfileFromAuthUser(signUpData.user));
+          const profile = buildProfileFromAuthUser(signUpData.user);
+          profile.role = role; // Always use the role from login page
+          localStorage.setItem('ai_path_user_role', role);
+          setUser(profile);
           navigate(ROUTE_PATHS.DASHBOARD);
           return;
         }
       }
 
       if (data?.user) {
+        const profile = buildProfileFromAuthUser(data.user);
+        profile.role = role; // Always use the role from login page
         localStorage.setItem('ai_path_user_role', role);
-        setUser(buildProfileFromAuthUser(data.user));
+        setUser(profile);
         navigate(ROUTE_PATHS.DASHBOARD);
       }
     } catch (error) {
